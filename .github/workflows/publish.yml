@@ -1,0 +1,37 @@
+name: npm-publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install deps (clean)
+        run: npm ci
+
+      # - name: Run tests (optional)
+      #   run: npm test
+
+      - name: Publish with provenance (OIDC)
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ''
