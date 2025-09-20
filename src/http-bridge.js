@@ -3,6 +3,7 @@ import cors from 'cors';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -330,6 +331,24 @@ app.post('/mcp', async (req, res) => {
 
 app.get('/mcp', async (req, res) => {
   res.writeHead(405).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }));
+});
+
+// SSE endpoint for ChatGPT/Connectors
+app.get('/sse', async (req, res) => {
+  const server = buildChocoServer();
+  try {
+    const transport = new SSEServerTransport();
+    await server.connect(transport);
+    await transport.handleRequest(req, res);
+    res.on('close', () => {
+      transport.close();
+      server.close();
+    });
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: String(err) }, id: null });
+    }
+  }
 });
 
 app.get('/health', (req, res) => {
