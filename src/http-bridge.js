@@ -374,7 +374,7 @@ app.get('/sse', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, name: 'mcp-chocolatey', version: '0.1.9', ts: new Date().toISOString() });
+res.json({ ok: true, name: 'mcp-chocolatey', version: '0.1.10', ts: new Date().toISOString() });
 });
 
 const PORT = Number(process.env.PORT || 11435);
