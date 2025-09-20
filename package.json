@@ -1,6 +1,6 @@
 {
   "name": "mcp-chocolatey",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": false,
   "type": "module",
   "description": "MCP server exposing Chocolatey (choco) commands as tools",
