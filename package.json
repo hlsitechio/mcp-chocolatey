@@ -14,7 +14,8 @@
   },
   "files": [
     "src",
-    "configs"
+    "configs",
+    "assets"
   ],
   "keywords": [
     "mcp",

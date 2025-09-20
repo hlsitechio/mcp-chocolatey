@@ -1,3 +1,5 @@
+![MCP Chocolatey](./assets/choco_mcp_logo.png)
+
 # MCP Chocolatey
 
 MCP server that exposes Chocolatey (choco) commands as tools.
