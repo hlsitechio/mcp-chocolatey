@@ -53,7 +53,7 @@ function logEvt(evt) {
 }
 
 function buildChocoServer() {
-  const server = new McpServer({ name: 'mcp-chocolatey', version: '0.1.9' }, { capabilities: { logging: {} } });
+  const server = new McpServer({ name: 'mcp-chocolatey', version: '0.1.10' }, { capabilities: { logging: {} } });
 
   server.tool(
     'choco_list',

@@ -68,7 +68,7 @@ function logEvt(evt) {
 
 const server = createServer({
   name: 'mcp-chocolatey',
-  version: '0.1.9'
+  version: '0.1.10'
 });
 
 // list local packages

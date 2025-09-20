@@ -94,7 +94,11 @@ If you expose via ngrok, be aware you’re exposing package management endpoints
 Any non‑JSON text on stdout can break MCP. This package avoids stdout noise; however, some environments make `npx` chatty. **Fix**: add the env shown above (`NPX_SILENT`, `npm_config_loglevel`) or run `node` directly to the server script.
 
 ### `choco` not found
-Ensure Chocolatey is on PATH. For a per‑user install it typically lives under `C:\Users\<you>\AppData\Local\UniGetUI\Chocolatey\bin`.
+Ensure Chocolatey is on PATH. Typical locations:
+- System install: `C:\\ProgramData\\chocolatey\\bin`
+- Per-user install: `C:\\Users\\<you>\\AppData\\Local\\Programs\\Chocolatey\\bin`
+
+If it’s elsewhere, set `CHOCO_BIN` env var to the full path to `choco.exe`.
 
 ---
 
