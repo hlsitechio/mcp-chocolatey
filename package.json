@@ -13,7 +13,8 @@
     "release": "npm version patch && git push --follow-tags"
   },
   "files": [
-    "src"
+    "src",
+    "configs"
   ],
   "keywords": [
     "mcp",
@@ -26,7 +27,7 @@
   "author": "Hubert",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hlsitechio/mcp-chocolatey.git"
+    "url": "git+https://github.com/hlsitechio/mcp-chocolatey.git"
   },
   "bugs": {
     "url": "https://github.com/hlsitechio/mcp-chocolatey/issues"

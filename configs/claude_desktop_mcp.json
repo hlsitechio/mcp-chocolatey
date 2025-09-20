@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "chocolatey": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-chocolatey@0.1.0"
+      ]
+    }
+  }
+}
