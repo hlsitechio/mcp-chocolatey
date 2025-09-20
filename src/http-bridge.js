@@ -312,16 +312,38 @@ const app = express();
 app.use(express.json());
 app.use(cors({ origin: '*', exposedHeaders: ['Mcp-Session-Id'] }));
 
-app.post('/mcp', async (req, res) => {
+// Maintain active SSE sessions so POST /mcp can route messages
+const sessions = new Map(); // sessionId -> { transport, server }
+
+app.get('/sse', async (req, res) => {
   const server = buildChocoServer();
   try {
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    // Announce that clients should POST messages to /mcp?sessionId=...
+    const transport = new SSEServerTransport('/mcp', res);
     await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await transport.start();
+    sessions.set(transport.sessionId, { transport, server });
     res.on('close', () => {
       transport.close();
       server.close();
+      sessions.delete(transport.sessionId);
     });
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: String(err) }, id: null });
+    }
+  }
+});
+
+// Handle client POSTs for SSE sessions
+app.post('/mcp', async (req, res) => {
+  try {
+    const sid = (req.query.sessionId || '').toString();
+    const sess = sessions.get(sid);
+    if (!sid || !sess) {
+      return res.status(400).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Invalid or missing sessionId' }, id: null });
+    }
+    await sess.transport.handlePostMessage(req, res, req.body);
   } catch (err) {
     if (!res.headersSent) {
       res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: String(err) }, id: null });

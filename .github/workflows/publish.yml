@@ -10,6 +10,8 @@ permissions:
   contents: read
   id-token: write
 
+concurrency: publish-${{ github.ref }}
+
 jobs:
   publish:
     name: Publish to npm
@@ -27,6 +29,9 @@ jobs:
 
       - name: Install deps (clean)
         run: npm ci
+
+      - name: Inspect package (optional)
+        run: npm pack --dry-run
 
       - name: Diagnostics (optional)
         run: |
