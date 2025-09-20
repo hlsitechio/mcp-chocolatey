@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start:stdio": "node src/server.js",
+    "start:http": "node src/http-bridge.js",
     "release": "npm version patch && git push --follow-tags"
   },
   "files": [
