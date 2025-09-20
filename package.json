@@ -1,7 +1,7 @@
 {
   "name": "mcp-chocolatey",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "MCP server exposing Chocolatey (choco) commands as tools",
   "bin": {
@@ -9,7 +9,34 @@
   },
   "scripts": {
     "start": "node src/sse.js",
-    "start:stdio": "node src/server.js"
+    "start:stdio": "node src/server.js",
+    "release": "npm version patch && git push --follow-tags"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "chocolatey",
+    "cli",
+    "windows"
+  ],
+  "license": "MIT",
+  "author": "Hubert",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hlsitechio/mcp-chocolatey.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hlsitechio/mcp-chocolatey/issues"
+  },
+  "homepage": "https://github.com/hlsitechio/mcp-chocolatey#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.1",
