@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import { createServer } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -20,7 +20,7 @@ async function runChoco(args) {
 }
 
 function buildChocoServer() {
-  const server = createServer({ name: 'mcp-chocolatey', version: '0.1.0' });
+  const server = new McpServer({ name: 'mcp-chocolatey', version: '0.1.0' }, { capabilities: { logging: {} } });
 
   server.tool(
     'choco_list',
