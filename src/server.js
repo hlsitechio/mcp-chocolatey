@@ -49,9 +49,26 @@ async function runChoco(args, { timeoutMs } = {}) {
   }
 }
 
+async function isAdmin() {
+  if (process.platform !== 'win32') return false;
+  try {
+    const { stdout } = await pExecFile('powershell', [
+      '-NoProfile','-NonInteractive','-Command',
+      "[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { windowsHide: true, timeout: 5000 });
+    return /True/i.test(String(stdout).trim());
+  } catch {
+    return false;
+  }
+}
+
+function logEvt(evt) {
+  try { console.error(JSON.stringify({ ts: new Date().toISOString(), ...evt })); } catch (_) {}
+}
+
 const server = createServer({
   name: 'mcp-chocolatey',
-  version: '0.1.8'
+  version: '0.1.9'
 });
 
 // list local packages
@@ -101,6 +118,8 @@ server.tool(
     extraArgs: z.array(z.string()).default([]),
   }),
   async ({ id, version, prerelease, force, source, yes, failOnStdErr, timeoutSec, extraArgs }) => {
+    if (!yes) throw new Error('Install requires yes=true');
+    const admin = await isAdmin();
     const args = ['install', id];
     if (version) { args.push('--version', version); }
     if (prerelease) args.push('--pre');
@@ -109,9 +128,12 @@ server.tool(
     if (yes) args.push('-y');
     if (failOnStdErr) args.push('--fail-on-standard-error');
     if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+    const t0 = Date.now();
     const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
+    logEvt({ tool: 'choco_install', id, durationMs: Date.now() - t0, exitCode: res.exitCode, ok: res.ok });
     if (!res.ok) throw new Error(res.stderr || res.stdout);
-    return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
+    const prefix = admin ? '' : '[Non-admin session] Some installs may fail or be user-scoped only.\n\n';
+    return { content: [{ type: 'text', text: prefix + res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
   }
 );
 
@@ -130,6 +152,8 @@ server.tool(
     extraArgs: z.array(z.string()).default([]),
   }),
   async ({ id, prerelease, force, source, yes, failOnStdErr, timeoutSec, extraArgs }) => {
+    if (!yes) throw new Error('Upgrade requires yes=true');
+    const admin = await isAdmin();
     const args = ['upgrade', id];
     if (prerelease) args.push('--pre');
     if (force) args.push('--force');
@@ -137,9 +161,12 @@ server.tool(
     if (yes) args.push('-y');
     if (failOnStdErr) args.push('--fail-on-standard-error');
     if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+    const t0 = Date.now();
     const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
+    logEvt({ tool: 'choco_upgrade', id, durationMs: Date.now() - t0, exitCode: res.exitCode, ok: res.ok });
     if (!res.ok) throw new Error(res.stderr || res.stdout);
-    return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
+    const prefix = admin ? '' : '[Non-admin session] Some upgrades may fail or be user-scoped only.\n\n';
+    return { content: [{ type: 'text', text: prefix + res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
   }
 );
 
@@ -156,14 +183,19 @@ server.tool(
     extraArgs: z.array(z.string()).default([]),
   }),
   async ({ id, version, force, yes, timeoutSec, extraArgs }) => {
+    if (!yes) throw new Error('Uninstall requires yes=true');
+    const admin = await isAdmin();
     const args = ['uninstall', id];
     if (version) { args.push('--version', version); }
     if (force) args.push('--force');
     if (yes) args.push('-y');
     if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+    const t0 = Date.now();
     const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
+    logEvt({ tool: 'choco_uninstall', id, durationMs: Date.now() - t0, exitCode: res.exitCode, ok: res.ok });
     if (!res.ok) throw new Error(res.stderr || res.stdout);
-    return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
+    const prefix = admin ? '' : '[Non-admin session] Some uninstalls may fail or be partial.\n\n';
+    return { content: [{ type: 'text', text: prefix + res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
   }
 );
 

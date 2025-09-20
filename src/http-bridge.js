@@ -34,8 +34,25 @@ async function runChoco(args, { timeoutMs } = {}) {
   }
 }
 
+async function isAdmin() {
+  if (process.platform !== 'win32') return false;
+  try {
+    const { stdout } = await pExecFile('powershell', [
+      '-NoProfile','-NonInteractive','-Command',
+      "[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { windowsHide: true, timeout: 5000 });
+    return /True/i.test(String(stdout).trim());
+  } catch {
+    return false;
+  }
+}
+
+function logEvt(evt) {
+  try { console.error(JSON.stringify({ ts: new Date().toISOString(), ...evt })); } catch (_) {}
+}
+
 function buildChocoServer() {
-  const server = new McpServer({ name: 'mcp-chocolatey', version: '0.1.8' }, { capabilities: { logging: {} } });
+  const server = new McpServer({ name: 'mcp-chocolatey', version: '0.1.9' }, { capabilities: { logging: {} } });
 
   server.tool(
     'choco_list',
@@ -81,6 +98,8 @@ function buildChocoServer() {
       extraArgs: z.array(z.string()).default([]),
     }),
     async ({ id, version, prerelease, force, source, yes, failOnStdErr, timeoutSec, extraArgs }) => {
+      if (!yes) throw new Error('Install requires yes=true');
+      const admin = await isAdmin();
       const args = ['install', id];
       if (version) { args.push('--version', version); }
       if (prerelease) args.push('--pre');
@@ -89,9 +108,12 @@ function buildChocoServer() {
       if (yes) args.push('-y');
       if (failOnStdErr) args.push('--fail-on-standard-error');
       if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+      const t0 = Date.now();
       const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
+      logEvt({ tool: 'choco_install', id, durationMs: Date.now() - t0, exitCode: res.exitCode, ok: res.ok });
       if (!res.ok) throw new Error(res.stderr || res.stdout);
-      return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
+      const prefix = admin ? '' : '[Non-admin session] Some installs may fail or be user-scoped only.\n\n';
+      return { content: [{ type: 'text', text: prefix + res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
     }
   );
 
@@ -109,6 +131,8 @@ function buildChocoServer() {
       extraArgs: z.array(z.string()).default([]),
     }),
     async ({ id, prerelease, force, source, yes, failOnStdErr, timeoutSec, extraArgs }) => {
+      if (!yes) throw new Error('Upgrade requires yes=true');
+      const admin = await isAdmin();
       const args = ['upgrade', id];
       if (prerelease) args.push('--pre');
       if (force) args.push('--force');
@@ -116,9 +140,12 @@ function buildChocoServer() {
       if (yes) args.push('-y');
       if (failOnStdErr) args.push('--fail-on-standard-error');
       if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+      const t0 = Date.now();
       const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
+      logEvt({ tool: 'choco_upgrade', id, durationMs: Date.now() - t0, exitCode: res.exitCode, ok: res.ok });
       if (!res.ok) throw new Error(res.stderr || res.stdout);
-      return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
+      const prefix = admin ? '' : '[Non-admin session] Some upgrades may fail or be user-scoped only.\n\n';
+      return { content: [{ type: 'text', text: prefix + res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
     }
   );
 
@@ -134,14 +161,19 @@ function buildChocoServer() {
       extraArgs: z.array(z.string()).default([]),
     }),
     async ({ id, version, force, yes, timeoutSec, extraArgs }) => {
+      if (!yes) throw new Error('Uninstall requires yes=true');
+      const admin = await isAdmin();
       const args = ['uninstall', id];
       if (version) { args.push('--version', version); }
       if (force) args.push('--force');
       if (yes) args.push('-y');
       if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+      const t0 = Date.now();
       const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
+      logEvt({ tool: 'choco_uninstall', id, durationMs: Date.now() - t0, exitCode: res.exitCode, ok: res.ok });
       if (!res.ok) throw new Error(res.stderr || res.stdout);
-      return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
+      const prefix = admin ? '' : '[Non-admin session] Some uninstalls may fail or be partial.\n\n';
+      return { content: [{ type: 'text', text: prefix + res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
     }
   );
 
@@ -298,6 +330,10 @@ app.post('/mcp', async (req, res) => {
 
 app.get('/mcp', async (req, res) => {
   res.writeHead(405).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }));
+});
+
+app.get('/health', (req, res) => {
+  res.json({ ok: true, name: 'mcp-chocolatey', version: '0.1.9', ts: new Date().toISOString() });
 });
 
 const PORT = Number(process.env.PORT || 11435);
