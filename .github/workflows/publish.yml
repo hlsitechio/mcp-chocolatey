@@ -23,32 +23,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install deps (clean)
         run: npm ci
 
-      - name: Prepare OIDC env (unset npmrc)
-        shell: bash
+      - name: Diagnostics (optional)
         run: |
           echo "Node $(node -v); npm $(npm -v)"
-          unset NPM_CONFIG_USERCONFIG || true
-          rm -f "$NPM_CONFIG_USERCONFIG" || true
-
-      - name: OIDC diagnostics (no secrets)
-        shell: bash
-        run: |
-          echo "GITHUB_REF=$GITHUB_REF"
-          echo "GITHUB_REF_TYPE=$GITHUB_REF_TYPE"
-          echo "GITHUB_SHA=$GITHUB_SHA"
-          echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
-          echo "GITHUB_RUN_ID=$GITHUB_RUN_ID"
-          for n in NODE_AUTH_TOKEN NPM_TOKEN NPM_CONFIG_USERCONFIG NPM_CONFIG_REGISTRY; do
-            if [ -n "${!n+x}" ]; then echo "ENV:$n=set"; else echo "ENV:$n=unset"; fi
-          done
-          if [ -f ".npmrc" ]; then echo ".npmrc present at repo root"; else echo "no repo .npmrc"; fi
           npm config get registry
-          npm ping || true
-          npm whoami || true
+          npm whoami || echo "Not logged in yet (expected)"
 
-      - name: Publish with provenance (OIDC)
-        run: npm publish --provenance
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
