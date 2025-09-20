@@ -27,5 +27,12 @@ jobs:
       - name: Install deps (clean)
         run: npm ci
 
+      - name: Prepare OIDC env (unset npmrc)
+        shell: bash
+        run: |
+          echo "Node $(node -v); npm $(npm -v)"
+          unset NPM_CONFIG_USERCONFIG || true
+          rm -f "$NPM_CONFIG_USERCONFIG" || true
+
       - name: Publish with provenance (OIDC)
         run: npm publish --provenance
