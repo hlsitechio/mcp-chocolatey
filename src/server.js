@@ -3,22 +3,55 @@ import { createServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { stdio } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-const pExecFile = promisify(execFile);
 
-async function runChoco(args) {
+const pExecFile = promisify(execFile);
+const CHOCO_BIN = process.env.CHOCO_BIN || 'choco';
+const DEFAULT_TIMEOUT_MS = Number(process.env.MCP_CHOCOLATEY_TIMEOUT_MS || '900000'); // 15m
+const MAX_CONCURRENCY = Math.max(1, Number(process.env.MCP_CHOCOLATEY_MAX_CONCURRENCY || '1'));
+
+class Semaphore {
+  constructor(permits) {
+    this.permits = permits;
+    this.queue = [];
+  }
+  async acquire() {
+    if (this.permits > 0) {
+      this.permits -= 1;
+      return;
+    }
+    return new Promise(resolve => this.queue.push(resolve));
+  }
+  release() {
+    const next = this.queue.shift();
+    if (next) next(); else this.permits += 1;
+  }
+}
+
+const sem = new Semaphore(MAX_CONCURRENCY);
+
+async function runChoco(args, { timeoutMs } = {}) {
+  await sem.acquire();
   try {
-    const { stdout, stderr } = await pExecFile('choco', args, { windowsHide: true });
-    return { ok: true, stdout, stderr };
+    const { stdout, stderr } = await pExecFile(CHOCO_BIN, args, {
+      windowsHide: true,
+      timeout: timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { ok: true, exitCode: 0, stdout, stderr, rebootRequired: /3010|reboot required/i.test(stdout || '') };
   } catch (err) {
     const stdout = err?.stdout?.toString?.() ?? '';
     const stderr = err?.stderr?.toString?.() ?? String(err);
-    return { ok: false, stdout, stderr };
+    const exitCode = typeof err?.code === 'number' ? err.code : 1;
+    const rebootRequired = exitCode === 3010 || /3010|reboot required/i.test(stdout + '\n' + stderr);
+    return { ok: false, exitCode, stdout, stderr, rebootRequired };
+  } finally {
+    sem.release();
   }
 }
 
 const server = createServer({
   name: 'mcp-chocolatey',
-  version: '0.1.0'
+  version: '0.1.8'
 });
 
 // list local packages
@@ -41,11 +74,11 @@ server.tool(
 server.tool(
   'choco_search',
   'Search remote Chocolatey packages',
-  z.object({ query: z.string(), exact: z.boolean().default(false), pre: z.boolean().default(false) }),
-  async ({ query, exact, pre }) => {
+  z.object({ query: z.string(), exact: z.boolean().default(false), prerelease: z.boolean().default(false) }),
+  async ({ query, exact, prerelease }) => {
     const args = ['search', query];
     if (exact) args.push('--exact');
-    if (pre) args.push('--pre');
+    if (prerelease) args.push('--pre');
     const res = await runChoco(args);
     if (!res.ok) throw new Error(res.stderr || res.stdout);
     return { content: [{ type: 'text', text: res.stdout }] };
@@ -56,15 +89,29 @@ server.tool(
 server.tool(
   'choco_install',
   'Install a Chocolatey package',
-  z.object({ id: z.string(), version: z.string().optional(), y: z.boolean().default(true), params: z.array(z.string()).default([]) }),
-  async ({ id, version, y, params }) => {
+  z.object({
+    id: z.string(),
+    version: z.string().optional(),
+    prerelease: z.boolean().default(false),
+    force: z.boolean().default(false),
+    source: z.string().optional(),
+    yes: z.boolean().default(true),
+    failOnStdErr: z.boolean().default(false),
+    timeoutSec: z.number().int().positive().optional(),
+    extraArgs: z.array(z.string()).default([]),
+  }),
+  async ({ id, version, prerelease, force, source, yes, failOnStdErr, timeoutSec, extraArgs }) => {
     const args = ['install', id];
-    if (version) { args.push('--version'); args.push(version); }
-    if (y) args.push('-y');
-    args.push(...params);
-    const res = await runChoco(args);
+    if (version) { args.push('--version', version); }
+    if (prerelease) args.push('--pre');
+    if (force) args.push('--force');
+    if (source) args.push('-s', source);
+    if (yes) args.push('-y');
+    if (failOnStdErr) args.push('--fail-on-standard-error');
+    if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+    const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
     if (!res.ok) throw new Error(res.stderr || res.stdout);
-    return { content: [{ type: 'text', text: res.stdout }] };
+    return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
   }
 );
 
@@ -72,14 +119,27 @@ server.tool(
 server.tool(
   'choco_upgrade',
   'Upgrade a Chocolatey package (or all with id=all)',
-  z.object({ id: z.string(), y: z.boolean().default(true), params: z.array(z.string()).default([]) }),
-  async ({ id, y, params }) => {
+  z.object({
+    id: z.string(),
+    prerelease: z.boolean().default(false),
+    force: z.boolean().default(false),
+    source: z.string().optional(),
+    yes: z.boolean().default(true),
+    failOnStdErr: z.boolean().default(false),
+    timeoutSec: z.number().int().positive().optional(),
+    extraArgs: z.array(z.string()).default([]),
+  }),
+  async ({ id, prerelease, force, source, yes, failOnStdErr, timeoutSec, extraArgs }) => {
     const args = ['upgrade', id];
-    if (y) args.push('-y');
-    args.push(...params);
-    const res = await runChoco(args);
+    if (prerelease) args.push('--pre');
+    if (force) args.push('--force');
+    if (source) args.push('-s', source);
+    if (yes) args.push('-y');
+    if (failOnStdErr) args.push('--fail-on-standard-error');
+    if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+    const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
     if (!res.ok) throw new Error(res.stderr || res.stdout);
-    return { content: [{ type: 'text', text: res.stdout }] };
+    return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
   }
 );
 
@@ -87,14 +147,23 @@ server.tool(
 server.tool(
   'choco_uninstall',
   'Uninstall a Chocolatey package',
-  z.object({ id: z.string(), y: z.boolean().default(true), params: z.array(z.string()).default([]) }),
-  async ({ id, y, params }) => {
+  z.object({
+    id: z.string(),
+    version: z.string().optional(),
+    force: z.boolean().default(false),
+    yes: z.boolean().default(true),
+    timeoutSec: z.number().int().positive().optional(),
+    extraArgs: z.array(z.string()).default([]),
+  }),
+  async ({ id, version, force, yes, timeoutSec, extraArgs }) => {
     const args = ['uninstall', id];
-    if (y) args.push('-y');
-    args.push(...params);
-    const res = await runChoco(args);
+    if (version) { args.push('--version', version); }
+    if (force) args.push('--force');
+    if (yes) args.push('-y');
+    if (Array.isArray(extraArgs) && extraArgs.length) args.push(...extraArgs);
+    const res = await runChoco(args, { timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined });
     if (!res.ok) throw new Error(res.stderr || res.stdout);
-    return { content: [{ type: 'text', text: res.stdout }] };
+    return { content: [{ type: 'text', text: res.stdout }], annotations: { exitCode: String(res.exitCode), rebootRequired: String(res.rebootRequired) } };
   }
 );
 
@@ -102,7 +171,7 @@ server.tool(
 server.tool(
   'choco_info',
   'Get package information',
-  z.object({ id: z.string(), exact: z.boolean().default(true), verbose: z.boolean().default(true) }),
+  z.object({ id: z.string(), exact: z.boolean().default(true), verbose: z.boolean().default(false) }),
   async ({ id, exact, verbose }) => {
     const args = ['info', id];
     if (exact) args.push('--exact');
@@ -117,10 +186,11 @@ server.tool(
 server.tool(
   'choco_outdated',
   'List outdated packages',
-  z.object({ ignorePinned: z.boolean().default(false) }),
-  async ({ ignorePinned }) => {
+  z.object({ ignorePinned: z.boolean().default(false), includePrerelease: z.boolean().default(false) }),
+  async ({ ignorePinned, includePrerelease }) => {
     const args = ['outdated'];
     if (ignorePinned) args.push('--ignore-pinned');
+    if (includePrerelease) args.push('--pre');
     const res = await runChoco(args);
     if (!res.ok) throw new Error(res.stderr || res.stdout);
     return { content: [{ type: 'text', text: res.stdout }] };
